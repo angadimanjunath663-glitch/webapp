@@ -1,9 +1,13 @@
-const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const selfsigned = require('selfsigned');
 
-const server = http.createServer((req, res) => {
+// Auto-generate a self-signed certificate
+const pems = selfsigned.generate([], { days: 365 });
+
+const server = https.createServer({ key: pems.private, cert: pems.cert }, (req, res) => {
   let filePath = '.' + req.url;
   if (filePath === './') filePath = './index.html';
 
@@ -48,4 +52,4 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(3000, () => console.log('Server running at http://localhost:3000'));
+server.listen(3000, () => console.log('Server running at https://localhost:3000'));
