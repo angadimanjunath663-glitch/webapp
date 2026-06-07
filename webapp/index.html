@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebRTC Demo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="lobby">
+    <h2>WebRTC Video Call</h2>
+    <input id="roomInput" type="text" placeholder="Enter room name" />
+    <button onclick="joinRoom()">Join Room</button>
+  </div>
+
+  <div id="call" class="hidden">
+    <div class="videos">
+      <div>
+        <p>You</p>
+        <video id="localVideo" autoplay muted playsinline></video>
+      </div>
+      <div>
+        <p>Them</p>
+        <video id="remoteVideo" autoplay playsinline></video>
+      </div>
+    </div>
+    <p id="status">Waiting for second person to join...</p>
+  </div>
+
+  <script>
+    const STUN = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    let pc, localStream, ws, room;
+
+    async function joinRoom() {
+      room = document.getElementById('roomInput').value.trim();
+      if (!room) return alert('Enter a room name');
+
+      document.getElementById('lobby').classList.add('hidden');
+      document.getElementById('call').classList.remove('hidden');
+
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      document.getElementById('localVideo').srcObject = localStream;
+
+      ws = new WebSocket(`ws://localhost:3000`);
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'join', room }));
+      };
+
+      ws.onmessage = async ({ data }) => {
+        const msg = JSON.parse(data);
+
+        if (msg.type === 'start') {
+          await createPeerConnection();
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          ws.send(JSON.stringify({ type: 'offer', room, sdp: offer }));
+          setStatus('Calling...');
+        }
+
+        else if (msg.type === 'offer') {
+          await createPeerConnection();
+          await pc.setRemoteDescription(msg.sdp);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringify({ type: 'answer', room, sdp: answer }));
+        }
+
+        else if (msg.type === 'answer') {
+          await pc.setRemoteDescription(msg.sdp);
+        }
+
+        else if (msg.type === 'ice') {
+          await pc.addIceCandidate(msg.candidate);
+        }
+      };
+    }
+
+    async function createPeerConnection() {
+      pc = new RTCPeerConnection(STUN);
+
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      pc.ontrack = ({ streams }) => {
+        document.getElementById('remoteVideo').srcObject = streams[0];
+        setStatus('Connected');
+      };
+
+      pc.onicecandidate = ({ candidate }) => {
+        if (candidate) {
+          ws.send(JSON.stringify({ type: 'ice', room, candidate }));
+        }
+      };
+    }
+
+    function setStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
+  </script>
+</body>
+</html>
