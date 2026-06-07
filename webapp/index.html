@@ -29,7 +29,7 @@
   <script>
     const STUN = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
-    let pc, localStream, ws, room;
+    let pc, localStream, ws, room, iceCandidateBuffer = [];
 
     async function joinRoom() {
       room = document.getElementById('roomInput').value.trim();
@@ -41,7 +41,7 @@
       localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       document.getElementById('localVideo').srcObject = localStream;
 
-      ws = new WebSocket(`ws://localhost:3000`);
+      ws = new WebSocket(`ws://${window.location.host}`);
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: 'join', room }));
@@ -60,18 +60,27 @@
 
         else if (msg.type === 'offer') {
           await createPeerConnection();
-          await pc.setRemoteDescription(msg.sdp);
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+          // flush any buffered ICE candidates
+          for (const c of iceCandidateBuffer) await pc.addIceCandidate(c);
+          iceCandidateBuffer = [];
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           ws.send(JSON.stringify({ type: 'answer', room, sdp: answer }));
         }
 
         else if (msg.type === 'answer') {
-          await pc.setRemoteDescription(msg.sdp);
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+          for (const c of iceCandidateBuffer) await pc.addIceCandidate(c);
+          iceCandidateBuffer = [];
         }
 
         else if (msg.type === 'ice') {
-          await pc.addIceCandidate(msg.candidate);
+          if (pc && pc.remoteDescription) {
+            await pc.addIceCandidate(msg.candidate);
+          } else {
+            iceCandidateBuffer.push(msg.candidate);
+          }
         }
       };
     }
