@@ -37,13 +37,24 @@
 
       document.getElementById('lobby').classList.add('hidden');
       document.getElementById('call').classList.remove('hidden');
+      setStatus('Requesting camera and microphone...');
 
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (err) {
+        setStatus('ERROR: Camera/mic blocked — ' + err.message);
+        return;
+      }
+
       document.getElementById('localVideo').srcObject = localStream;
+      setStatus('Connecting to server...');
 
       ws = new WebSocket(`ws://${window.location.host}`);
 
+      ws.onerror = (err) => setStatus('ERROR: Could not connect to server.');
+
       ws.onopen = () => {
+        setStatus('Waiting for other person to join...');
         ws.send(JSON.stringify({ type: 'join', room }));
       };
 
